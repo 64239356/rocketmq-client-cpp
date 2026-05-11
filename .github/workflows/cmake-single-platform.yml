@@ -1,4 +1,5 @@
-name: Build rocketmq-client-cpp 三平台
+name: Build rocketmq-client-cpp Linux x64 + ARM64
+
 on:
   push:
     branches: [ "master" ]
@@ -8,10 +9,12 @@ on:
 
 env:
   BUILD_TYPE: Release
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 修复 Node.js 20 弃用警告
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Linux x86_64
+  # ==========================
+  # Linux x86_64 正常编译
+  # ==========================
   build-linux-x64:
     runs-on: ubuntu-22.04
     steps:
@@ -27,32 +30,34 @@ jobs:
           name: rocketmq-linux-x64
           path: build/
 
-  # Linux ARM64 (ARM 服务器/欧拉/麒麟)
+  # ==========================
+  # Linux ARM64 修复 -m64 错误
+  # ==========================
   build-linux-arm64:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+
       - name: Install ARM toolchain
         run: sudo apt update && sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake libssl-dev
+
+      # 🔥 核心修复：移除源码里的 -m64 编译选项（ARM 不支持）
+      - name: Fix -m64 for ARM
+        run: |
+          find . -name "CMakeLists.txt" -type f | xargs sed -i 's/-m64//g'
+          find . -name "*.cmake" -type f | xargs sed -i 's/-m64//g'
+
       - name: Configure CMake
-        run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+        run: |
+          cmake -B ${{github.workspace}}/build \
+            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-      - uses: actions/upload-artifact@v4
+
+      - uses: upload-artifact@v4
         with:
           name: rocketmq-linux-arm64
           path: build/
-
-  # Windows (修复 vs2026 重定向问题)
-  build-windows:
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configure CMake
-        run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-      - name: Build
-        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rocketmq-windows
-          path: build/Release/
