@@ -1,54 +1,107 @@
-name: Multi-Arch Build (x64 & ARM64)
+name: Multi-Arch Build (AMD64 & ARM64)
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build RocketMQ CPP Client (${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
+      - name: Set up QEMU for ARM64
         if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
-      - name: Build in Container
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Display System Info
+        run: |
+          echo "=== Build Configuration ==="
+          echo "Architecture: ${{ matrix.arch }}"
+          echo "Platform: ${{ matrix.platform }}"
+          echo "Workspace: ${{ github.workspace }}"
+
+      - name: Build with Docker
         run: |
           docker run --rm \
-            --platform linux/${{ matrix.arch }} \
+            --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            ubuntu:20.04 /bin/bash -c "
-              # 1. 完善基础依赖安装
-              apt-get update && \
+            ubuntu:20.04 bash -c "
+              set -e
+              
+              echo '=== Installing dependencies ==='
+              apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                build-essential cmake git libtool autoconf automake \
-                pkg-config libz-dev libssl-dev libncurses5-dev \
-                curl wget python3 bzip2 tar && \
+                build-essential \
+                cmake \
+                git \
+                libtool \
+                autoconf \
+                automake \
+                pkg-config \
+                libz-dev \
+                libssl-dev \
+                libncurses5-dev \
+                curl \
+                wget \
+                python3 \
+                bzip2 \
+                tar \
+                unzip
               
-              # 2. 修复 build.sh 的执行环境
-              # 强制使用 bash 运行，并传入参数跳过单元测试
-              # 根据 rocketmq-client-cpp 脚本设计，通常直接 sh build.sh 会编译所有
-              # 我们通过执行具体的 cmake 参数来达到你的要求
+              echo '=== System Information ==='
+              uname -a
+              gcc --version
+              cmake --version
               
-              chmod +x build.sh && \
-              # 关键点：使用 bash 而非 sh，避免 -eq 报错
-              # 禁用单元测试一般通过指令参数或环境变量，这里我们直接执行脚本
+              echo '=== Building RocketMQ Client CPP ==='
+              chmod +x build.sh
               bash build.sh
+              
+              echo '=== Build Complete ==='
+              ls -lh bin/ || echo 'No bin directory found'
             "
 
-      - name: Upload Artifacts
+      - name: List Build Artifacts
+        if: always()
+        run: |
+          echo "=== Build Artifacts for ${{ matrix.arch }} ==="
+          ls -lh bin/ 2>/dev/null || echo "No artifacts found"
+
+      - name: Upload Build Artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: rocketmq-client-${{ matrix.arch }}
+          name: rocketmq-client-cpp-${{ matrix.arch }}
           path: bin/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Generate Build Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Build Summary
+          - **Architecture**: ${{ matrix.arch }}
+          - **Status**: ${{ job.status }}
+          - **Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          EOF
