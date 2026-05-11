@@ -212,7 +212,11 @@ BuildOpenSSL() {
   if [ -e ${fname_openssl} ]; then
     echo "${fname_openssl} exists"
   else
-    wget https://www.openssl.org/source/old/1.1.1/${fname_openssl_down} -O ${fname_openssl_down} --no-check-certificate
+    wget https://github.com/openssl/openssl/releases/download/openssl-1.1.1d/${fname_openssl_down} -O ${fname_openssl_down}
+    if [ $? -ne 0 ]; then
+      echo "Failed to download from GitHub releases, trying mirror source..."
+      wget https://www.openssl.org/source/old/1.1.1/${fname_openssl_down} -O ${fname_openssl_down} --no-check-certificate
+    fi
   fi
   tar -zxvf ${fname_openssl} &> unzipopenssl.txt
   if [ $? -ne 0 ]; then
@@ -276,9 +280,9 @@ BuildLibevent() {
   fi
   echo "build libevent static #####################"
   if [ $verbose -eq 0 ]; then
-    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${install_lib_dir} &> libeventconfig.txt
+    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${inst[...]
   else
-    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${install_lib_dir}
+    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${inst[...]
   fi
   if [ $? -ne 0 ]; then
     exit 1
@@ -372,9 +376,9 @@ BuildBoost() {
   pwd
   if [ $verbose -eq 0 ]; then
     echo "build boost without detail log."
-    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-locale --with-iostreams threading=multi link=static release install --prefix=${install_lib_dir} &> boostbuild.txt
+    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-loca[...]
   else
-    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-locale --with-iostreams threading=multi link=static release install --prefix=${install_lib_dir}
+    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-loca[...]
   fi
   if [ $? -ne 0 ]; then
     exit 1
