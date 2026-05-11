@@ -280,9 +280,9 @@ BuildLibevent() {
   fi
   echo "build libevent static #####################"
   if [ $verbose -eq 0 ]; then
-    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${inst[...]
+    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${install_lib_dir} &> libeventconfig.txt
   else
-    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${inst[...]
+    ./configure --enable-static=yes --enable-shared=no CFLAGS="-fPIC -I${install_lib_dir}/include" CPPFLAGS="-fPIC -I${install_lib_dir}/include" LDFLAGS="-L${install_lib_dir}/lib" --prefix=${install_lib_dir}
   fi
   if [ $? -ne 0 ]; then
     exit 1
@@ -376,9 +376,9 @@ BuildBoost() {
   pwd
   if [ $verbose -eq 0 ]; then
     echo "build boost without detail log."
-    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-loca[...]
+    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-locale --with-iostreams link=static threading=multi runtime-link=shared &> boostbuild.txt
   else
-    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-loca[...]
+    ./b2 -j$cpu_num cflags=-fPIC cxxflags=-fPIC --with-atomic --with-thread --with-system --with-chrono --with-date_time --with-log --with-regex --with-serialization --with-filesystem --with-locale --with-iostreams link=static threading=multi runtime-link=shared
   fi
   if [ $? -ne 0 ]; then
     exit 1
