@@ -5,7 +5,7 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
-
+  workflow_dispatch:  # 允许手动触发
 jobs:
   build:
     runs-on: ubuntu-latest
