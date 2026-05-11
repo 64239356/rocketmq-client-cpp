@@ -212,7 +212,7 @@ BuildOpenSSL() {
   if [ -e ${fname_openssl} ]; then
     echo "${fname_openssl} exists"
   else
-    wget https://github.com/openssl/openssl/releases/download/openssl-1.1.1d/${fname_openssl_down} -O ${fname_openssl_down}
+    wget https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1d/${fname_openssl_down} -O ${fname_openssl_down}
     if [ $? -ne 0 ]; then
       echo "Failed to download from GitHub releases, trying mirror source..."
       wget https://www.openssl.org/source/old/1.1.1/${fname_openssl_down} -O ${fname_openssl_down} --no-check-certificate
