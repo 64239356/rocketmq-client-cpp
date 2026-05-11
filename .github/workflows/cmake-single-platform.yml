@@ -11,13 +11,17 @@ jobs:
   build:
     name: Build RocketMQ CPP Client (${{ matrix.arch }})
     runs-on: ubuntu-latest
+    timeout-minutes: 240  # 4小时全局超时
     strategy:
       matrix:
         include:
           - arch: amd64
             platform: linux/amd64
+            timeout: 60          # AMD64: 60分钟
           - arch: arm64
             platform: linux/arm64
+            timeout: 180         # ARM64: 180分钟（3倍）
+      max-parallel: 1  # 顺序构建，避免资源竞争
 
     steps:
       - name: Checkout Code
@@ -37,55 +41,77 @@ jobs:
           echo "=== Build Configuration ==="
           echo "Architecture: ${{ matrix.arch }}"
           echo "Platform: ${{ matrix.platform }}"
-          echo "Workspace: ${{ github.workspace }}"
+          echo "Timeout: ${{ matrix.timeout }} minutes"
+          echo ""
+          echo "=== Host System Info ==="
+          uname -a
+          df -h
+          free -h
 
       - name: Build with Docker
+        timeout-minutes: ${{ matrix.timeout }}
         run: |
           docker run --rm \
             --platform ${{ matrix.platform }} \
+            --memory=2g \
+            --memory-swap=2g \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             ubuntu:20.04 bash -c "
               set -e
               
               echo '=== Installing dependencies ==='
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                build-essential \
-                cmake \
-                git \
-                libtool \
-                autoconf \
-                automake \
-                pkg-config \
-                libz-dev \
-                libssl-dev \
-                libncurses5-dev \
-                curl \
-                wget \
-                python3 \
-                bzip2 \
-                tar \
-                unzip
+              apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                build-essential cmake git libtool autoconf automake \
+                pkg-config libz-dev libssl-dev libncurses5-dev curl \
+                wget python3 bzip2 tar unzip
               
               echo '=== System Information ==='
               uname -a
-              gcc --version
-              cmake --version
+              nproc
+              free -h
+              df -h
+              gcc --version | head -1
               
               echo '=== Building RocketMQ Client CPP ==='
+              echo 'Start time:' \$(date)
               chmod +x build.sh
-              bash build.sh
               
+              # 使用 noVerbose 降低内存占用
+              timeout ${{ matrix.timeout }}m bash build.sh noVerbose || {
+                EXIT_CODE=\$?
+                echo 'Build failed with exit code:' \$EXIT_CODE
+                if [ -f tmp_build_dir/buildclient.txt ]; then
+                  echo '=== Last 100 lines of build log ==='
+                  tail -n 100 tmp_build_dir/buildclient.txt
+                fi
+                exit \$EXIT_CODE
+              }
+              
+              echo 'End time:' \$(date)
               echo '=== Build Complete ==='
-              ls -lh bin/ || echo 'No bin directory found'
+              if [ -d bin ]; then
+                ls -lh bin/ | head -20
+                du -sh bin/
+              fi
             "
 
-      - name: List Build Artifacts
-        if: always()
+      - name: Collect Build Logs on Failure
+        if: failure()
         run: |
-          echo "=== Build Artifacts for ${{ matrix.arch }} ==="
-          ls -lh bin/ 2>/dev/null || echo "No artifacts found"
+          mkdir -p build-logs
+          find . -maxdepth 3 -name "*build*.txt" -o -name "*config*.txt" | \
+            xargs -I {} cp {} build-logs/ 2>/dev/null || true
+          ls -lh build-logs/ 2>/dev/null || echo "No logs collected"
+
+      - name: Upload Build Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.arch }}
+          path: build-logs/
+          retention-days: 7
 
       - name: Upload Build Artifacts
         if: success()
@@ -94,7 +120,6 @@ jobs:
           name: rocketmq-client-cpp-${{ matrix.arch }}
           path: bin/
           retention-days: 30
-          if-no-files-found: warn
 
       - name: Generate Build Summary
         if: always()
@@ -103,5 +128,13 @@ jobs:
           ## Build Summary
           - **Architecture**: ${{ matrix.arch }}
           - **Status**: ${{ job.status }}
+          - **Timeout**: ${{ matrix.timeout }} minutes
           - **Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          
+          ### Performance Notes
+          **AMD64**: Full parallel compilation (60 min)
+          **ARM64**: QEMU emulation + memory limits (180 min)
+          - Memory limit: 2GB
+          - Parallel jobs: Auto-reduced
+          - Boost: Limited to 2 threads
           EOF
