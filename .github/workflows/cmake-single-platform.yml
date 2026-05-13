@@ -1,3 +1,17 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
 
 name: Build Ubuntu Multi-Architecture (AMD64 & ARM64)
 
@@ -137,21 +151,19 @@ jobs:
 
       - name: Patch FindJsoncpp.cmake to search system paths
         run: |
-          sed -i '/^FIND_PATH(JSONCPP_INCLUDE_DIRS/,/^)$/{
-            /^PATHS$/i\
-HINTS\
-    /usr/include\
-    /usr/local/include
-          }' cmake/FindJsoncpp.cmake
-          sed -i '/^find_library(JSONCPP_LIBRARIES/,/^)$/{
-            /^    PATHS.*bin\/lib/i\
-    HINTS\
-        /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\
-        /usr/lib\
-        /usr/local/lib
-          }' cmake/FindJsoncpp.cmake
-          echo "=== Patched FindJsoncpp.cmake ==="
-          grep -A 8 'FIND_PATH\|find_library' cmake/FindJsoncpp.cmake
+          python3 << 'PYEOF'
+          import os, re
+          jc = 'cmake/FindJsoncpp.cmake'
+          with open(jc) as f: c = f.read()
+          # FIND_PATH: insert HINTS before PATHS
+          c = re.sub(r'(FIND_PATH\(JSONCPP_INCLUDE_DIRS.*?)(PATHS)',
+                     r'\1HINTS\n    /usr/include\n    /usr/local/include\n\2', c, flags=re.DOTALL)
+          # find_library: insert HINTS before PATHS
+          c = re.sub(r'(find_library\(JSONCPP_LIBRARIES.*?)(PATHS \$\{CMAKE_SOURCE_DIR\}/bin/lib)',
+                     r'\1HINTS\n    /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\n    /usr/lib\n    /usr/local/lib\n\2', c, flags=re.DOTALL)
+          with open(jc, 'w') as f: f.write(c)
+          print("FindJsoncpp.cmake patched.")
+          PYEOF
 
       - name: Configure with CMake
         run: |
@@ -286,21 +298,17 @@ HINTS\
 
       - name: Patch FindJsoncpp.cmake to search system paths
         run: |
-          sed -i '/^FIND_PATH(JSONCPP_INCLUDE_DIRS/,/^)$/{
-            /^PATHS$/i\
-HINTS\
-    /usr/include\
-    /usr/local/include
-          }' cmake/FindJsoncpp.cmake
-          sed -i '/^find_library(JSONCPP_LIBRARIES/,/^)$/{
-            /^    PATHS.*bin\/lib/i\
-    HINTS\
-        /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\
-        /usr/lib\
-        /usr/local/lib
-          }' cmake/FindJsoncpp.cmake
-          echo "=== Patched FindJsoncpp.cmake ==="
-          grep -A 8 'FIND_PATH\|find_library' cmake/FindJsoncpp.cmake
+          python3 << 'PYEOF'
+          import os, re
+          jc = 'cmake/FindJsoncpp.cmake'
+          with open(jc) as f: c = f.read()
+          c = re.sub(r'(FIND_PATH\(JSONCPP_INCLUDE_DIRS.*?)(PATHS)',
+                     r'\1HINTS\n    /usr/include\n    /usr/local/include\n\2', c, flags=re.DOTALL)
+          c = re.sub(r'(find_library\(JSONCPP_LIBRARIES.*?)(PATHS \$\{CMAKE_SOURCE_DIR\}/bin/lib)',
+                     r'\1HINTS\n    /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\n    /usr/lib\n    /usr/local/lib\n\2', c, flags=re.DOTALL)
+          with open(jc, 'w') as f: f.write(c)
+          print("FindJsoncpp.cmake patched.")
+          PYEOF
 
       - name: Configure with CMake
         run: |
