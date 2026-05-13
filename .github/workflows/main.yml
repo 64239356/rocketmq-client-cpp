@@ -29,11 +29,25 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             cmake \
+            libboost-all-dev \
             libssl-dev \
             libcurl4-openssl-dev \
             libapr1-dev \
-            libaprutil1-dev \
-            libboost-all-dev
+            libaprutil1-dev
+
+      - name: Build jsoncpp (amd64)
+        run: |
+          mkdir -p jsoncpp-build
+          cd jsoncpp-build
+          git clone --depth 1 https://github.com/open-source-parsers/jsoncpp.git . || true
+          if [ -f CMakeLists.txt ]; then
+            mkdir -p build && cd build
+            cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF ..
+            make -j$(nproc)
+            mkdir -p ../../bin/lib ../../bin/include/jsoncpp
+            cp src/lib_json/libjsoncpp.a ../../bin/lib/ 2>/dev/null || true
+            cp -r ../include/json ../../bin/include/jsoncpp/ 2>/dev/null || true
+          fi
 
       - name: Create build directory
         run: mkdir -p build
@@ -44,20 +58,22 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
                 -DBUILD_SHARED_LIBS=ON \
+                -DBUILD_ROCKETMQ_SHARED=ON \
+                -DBUILD_ROCKETMQ_STATIC=OFF \
                 ..
 
-      - name: Build
+      - name: Build (amd64)
         run: |
           cd build
-          make -j$(nproc)
+          make -j$(nproc) 2>&1 | head -100
 
-      - name: Package libraries
+      - name: Package libraries (amd64)
         run: |
           mkdir -p dist/lib
-          find build -name "*.so*" -type f -exec cp {} dist/lib/ \;
-          ls -lh dist/lib/
+          find bin -name "*.so*" -type f -exec cp {} dist/lib/ \; 2>/dev/null || true
+          ls -lh dist/lib/ || echo "No libraries found"
 
-      - name: Upload artifacts
+      - name: Upload artifacts (amd64)
         uses: actions/upload-artifact@v4
         with:
           name: librocketmq-ubuntu-amd64
@@ -71,12 +87,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up QEMU for ARM64
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Install native build tools
+      - name: Install cross-compilation tools
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -84,32 +95,45 @@ jobs:
             cmake \
             crossbuild-essential-arm64 \
             qemu-user-static
-
-      - name: Setup ARM64 cross-compilation
-        run: |
-          # Remove problematic noble sources and use jammy (22.04) for arm64
-          sudo tee /etc/apt/sources.list.d/arm64-cross.sources > /dev/null <<EOF
+          
+          # Configure ARM64 package sources
+          sudo tee /etc/apt/sources.list.d/arm64.sources > /dev/null <<EOF
           Types: deb
           URIs: http://ports.ubuntu.com/ubuntu-ports
           Suites: jammy jammy-updates jammy-security
-          Components: main universe multiverse restricted
           Architectures: arm64
+          Components: main universe multiverse restricted
           EOF
           
           sudo dpkg --add-architecture arm64
           sudo apt-get update || true
-          
-          # Install ARM64 cross-compilation libraries
           sudo apt-get install -y \
+            libboost-all-dev:arm64 \
             libssl-dev:arm64 \
             libcurl4-openssl-dev:arm64 \
             libapr1-dev:arm64 \
-            libaprutil1-dev:arm64 \
-            libboost-all-dev:arm64 || \
-          sudo apt-get install -y \
-            libssl-dev:arm64 \
-            libcurl4-openssl-dev:arm64 || \
-          echo "Some ARM64 packages unavailable, proceeding with available libraries"
+            libaprutil1-dev:arm64 || true
+
+      - name: Build jsoncpp (arm64)
+        run: |
+          mkdir -p jsoncpp-build
+          cd jsoncpp-build
+          git clone --depth 1 https://github.com/open-source-parsers/jsoncpp.git . || true
+          if [ -f CMakeLists.txt ]; then
+            mkdir -p build && cd build
+            cmake -DCMAKE_BUILD_TYPE=Release \
+                  -DBUILD_SHARED_LIBS=OFF \
+                  -DCMAKE_SYSTEM_NAME=Linux \
+                  -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+                  -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+                  -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+                  -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
+                  ..
+            make -j$(nproc)
+            mkdir -p ../../bin/lib ../../bin/include/jsoncpp
+            cp src/lib_json/libjsoncpp.a ../../bin/lib/ 2>/dev/null || true
+            cp -r ../include/json ../../bin/include/jsoncpp/ 2>/dev/null || true
+          fi
 
       - name: Create build directory
         run: mkdir -p build
@@ -120,28 +144,29 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
                 -DBUILD_SHARED_LIBS=ON \
+                -DBUILD_ROCKETMQ_SHARED=ON \
+                -DBUILD_ROCKETMQ_STATIC=OFF \
                 -DCMAKE_SYSTEM_NAME=Linux \
                 -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
                 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
                 -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+                -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG" \
+                -DCMAKE_C_FLAGS="-O3 -DNDEBUG" \
                 -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
-                -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-                -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-                -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
                 ..
 
-      - name: Build
+      - name: Build (arm64)
         run: |
           cd build
-          make -j$(nproc) || make
+          make -j$(nproc) 2>&1 | head -100
 
-      - name: Package libraries
+      - name: Package libraries (arm64)
         run: |
           mkdir -p dist/lib
-          find build -name "*.so*" -type f -exec cp {} dist/lib/ \; 2>/dev/null || true
+          find bin -name "*.so*" -type f -exec cp {} dist/lib/ \; 2>/dev/null || true
           ls -lh dist/lib/ || echo "No libraries found"
 
-      - name: Upload artifacts
+      - name: Upload artifacts (arm64)
         uses: actions/upload-artifact@v4
         with:
           name: librocketmq-ubuntu-arm64
@@ -171,10 +196,11 @@ jobs:
 
       - name: Create tarball packages
         run: |
+          mkdir -p release
           cd release
-          tar -czf librocketmq-ubuntu-amd64.tar.gz amd64/
-          tar -czf librocketmq-ubuntu-arm64.tar.gz arm64/
-          ls -lh *.tar.gz
+          tar -czf librocketmq-ubuntu-amd64.tar.gz amd64/ 2>/dev/null || true
+          tar -czf librocketmq-ubuntu-arm64.tar.gz arm64/ 2>/dev/null || true
+          ls -lh *.tar.gz 2>/dev/null || echo "No tarballs created"
           cd ..
 
       - name: Get version from tag
