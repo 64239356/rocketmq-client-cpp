@@ -5,7 +5,7 @@
 # (the "License"); you may not use this file except in compliance with
 # the License.  You may obtain a copy of the License at
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,11 +19,19 @@ on:
   # 手动触发
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch to build'
+      build_type:
+        description: 'Build type'
         required: true
-        default: 'develop'
-        type: string
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+      run_tests:
+        description: 'Run unit tests'
+        required: false
+        default: false
+        type: boolean
       upload_artifacts:
         description: 'Upload build artifacts'
         required: false
@@ -33,12 +41,18 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
-      - '**.java'
-      - 'pom.xml'
+      - '**.cpp'
+      - '**.h'
+      - '**.c'
+      - 'CMakeLists.txt'
+      - 'build.sh'
       - '.github/workflows/build-ubuntu-multiarch.yml'
+  # 推送到主分支触发
+  push:
+    branches: [master, main]
 
 env:
-  MAVEN_OPTS: -Xmx4g -Xms1g -XX:MaxMetaspaceSize=512m
+  BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
 
 jobs:
   # 构建 AMD64 版本
@@ -48,44 +62,71 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Set up JDK 8
-        uses: actions/setup-java@v4
-        with:
-          java-version: '8'
-          distribution: 'corretto'
-          cache: 'maven'
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            autoconf \
+            libtool \
+            wget \
+            unzip \
+            libbz2-dev \
+            zlib1g-dev \
+            python3
 
-      - name: Cache Maven dependencies
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          path: |
+            ~/tmp_down_dir
+            ./bin
+          key: ${{ runner.os }}-amd64-deps-${{ hashFiles('build.sh') }}
           restore-keys: |
-            ${{ runner.os }}-maven-
+            ${{ runner.os }}-amd64-deps-
 
-      - name: Build with Maven (Skip Tests)
+      - name: Build rocketmq-client-cpp
         run: |
-          mvn -B clean package -DskipTests --file pom.xml
-          echo "Build completed for AMD64"
+          chmod +x build.sh
+          if [ "${{ github.event.inputs.run_tests }}" = "true" ]; then
+            ./build.sh test
+          else
+            ./build.sh
+          fi
 
-      - name: Prepare distribution package
+      - name: Prepare artifacts
         run: |
-          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          mkdir -p dist/amd64
-          cp -r distribution/target/rocketmq-${VERSION}/* dist/amd64/ 2>/dev/null || \
-            cp -r distribution/target/* dist/amd64/ 2>/dev/null || \
-            find . -name "rocketmq*.zip" -exec cp {} dist/amd64/ \;
-          ls -la dist/amd64/
+          mkdir -p artifacts/amd64
+          
+          # 复制静态库
+          if [ -f ./librocketmq.a ]; then
+            cp ./librocketmq.a artifacts/amd64/
+          fi
+          if [ -f ./bin/librocketmq.a ]; then
+            cp ./bin/librocketmq.a artifacts/amd64/
+          fi
+          
+          # 复制动态库
+          if [ -f ./bin/librocketmq.so ]; then
+            cp ./bin/librocketmq.so artifacts/amd64/
+          fi
+          
+          # 复制头文件
+          cp -r ./include artifacts/amd64/
+          
+          # 显示构建结果
+          ls -la artifacts/amd64/
+          ls -la artifacts/amd64/include/
 
       - name: Upload AMD64 artifacts
         if: ${{ github.event.inputs.upload_artifacts != 'false' }}
         uses: actions/upload-artifact@v4
         with:
-          name: rocketmq-ubuntu-amd64
-          path: dist/amd64/
+          name: rocketmq-client-cpp-ubuntu-amd64
+          path: artifacts/amd64/
           retention-days: 7
 
   # 构建 ARM64 版本
@@ -95,54 +136,128 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Set up JDK 8
-        uses: actions/setup-java@v4
-        with:
-          java-version: '8'
-          distribution: 'corretto'
-          cache: 'maven'
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            autoconf \
+            libtool \
+            wget \
+            unzip \
+            libbz2-dev \
+            zlib1g-dev \
+            python3
 
-      - name: Cache Maven dependencies
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-arm64-maven-${{ hashFiles('**/pom.xml') }}
+          path: |
+            ~/tmp_down_dir
+            ./bin
+          key: ${{ runner.os }}-arm64-deps-${{ hashFiles('build.sh') }}
           restore-keys: |
-            ${{ runner.os }}-arm64-maven-
+            ${{ runner.os }}-arm64-deps-
 
-      - name: Build with Maven (Skip Tests)
+      - name: Build rocketmq-client-cpp
         run: |
-          mvn -B clean package -DskipTests --file pom.xml
-          echo "Build completed for ARM64"
+          chmod +x build.sh
+          if [ "${{ github.event.inputs.run_tests }}" = "true" ]; then
+            ./build.sh test
+          else
+            ./build.sh
+          fi
 
-      - name: Prepare distribution package
+      - name: Prepare artifacts
         run: |
-          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          mkdir -p dist/arm64
-          cp -r distribution/target/rocketmq-${VERSION}/* dist/arm64/ 2>/dev/null || \
-            cp -r distribution/target/* dist/arm64/ 2>/dev/null || \
-            find . -name "rocketmq*.zip" -exec cp {} dist/arm64/ \;
-          ls -la dist/arm64/
+          mkdir -p artifacts/arm64
+          
+          # 复制静态库
+          if [ -f ./librocketmq.a ]; then
+            cp ./librocketmq.a artifacts/arm64/
+          fi
+          if [ -f ./bin/librocketmq.a ]; then
+            cp ./bin/librocketmq.a artifacts/arm64/
+          fi
+          
+          # 复制动态库
+          if [ -f ./bin/librocketmq.so ]; then
+            cp ./bin/librocketmq.so artifacts/arm64/
+          fi
+          
+          # 复制头文件
+          cp -r ./include artifacts/arm64/
+          
+          # 显示构建结果
+          ls -la artifacts/arm64/
+          ls -la artifacts/arm64/include/
 
       - name: Upload ARM64 artifacts
         if: ${{ github.event.inputs.upload_artifacts != 'false' }}
         uses: actions/upload-artifact@v4
         with:
-          name: rocketmq-ubuntu-arm64
-          path: dist/arm64/
+          name: rocketmq-client-cpp-ubuntu-arm64
+          path: artifacts/arm64/
           retention-days: 7
 
-  # 创建 Release（仅在手动触发时）
+  # 使用 QEMU 构建 ARM64（备选方案）
+  build-arm64-qemu:
+    name: Build Ubuntu ARM64 (QEMU)
+    runs-on: ubuntu-latest
+    if: false  # 默认禁用，当 ARM64 Runner 不可用时启用此项
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build in ARM64 container
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            --platform linux/arm64 \
+            ubuntu:22.04 \
+            bash -c "
+              apt-get update && \
+              apt-get install -y build-essential cmake git autoconf libtool wget unzip libbz2-dev zlib1g-dev python3 && \
+              chmod +x build.sh && \
+              ./build.sh
+            "
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts/arm64
+          if [ -f ./librocketmq.a ]; then
+            cp ./librocketmq.a artifacts/arm64/
+          fi
+          if [ -f ./bin/librocketmq.a ]; then
+            cp ./bin/librocketmq.a artifacts/arm64/
+          fi
+          cp -r ./include artifacts/arm64/
+          ls -la artifacts/arm64/
+
+      - name: Upload ARM64 artifacts
+        if: ${{ github.event.inputs.upload_artifacts != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocketmq-client-cpp-ubuntu-arm64-qemu
+          path: artifacts/arm64/
+          retention-days: 7
+
+  # 创建发布包
   create-release:
-    name: Create Release
+    name: Create Release Package
     needs: [build-amd64, build-arm64]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_artifacts == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -150,13 +265,13 @@ jobs:
       - name: Download AMD64 artifacts
         uses: actions/download-artifact@v4
         with:
-          name: rocketmq-ubuntu-amd64
+          name: rocketmq-client-cpp-ubuntu-amd64
           path: dist/amd64/
 
       - name: Download ARM64 artifacts
         uses: actions/download-artifact@v4
         with:
-          name: rocketmq-ubuntu-arm64
+          name: rocketmq-client-cpp-ubuntu-arm64
           path: dist/arm64/
 
       - name: Create distribution archives
@@ -166,33 +281,26 @@ jobs:
           
           # 打包 AMD64
           cd dist/amd64
-          zip -r ../../release/rocketmq-${VERSION}-ubuntu-amd64.zip .
+          tar -czvf ../../release/rocketmq-client-cpp-${VERSION}-ubuntu-amd64.tar.gz .
           cd ../..
           
           # 打包 ARM64
           cd dist/arm64
-          zip -r ../../release/rocketmq-${VERSION}-ubuntu-arm64.zip .
+          tar -czvf ../../release/rocketmq-client-cpp-${VERSION}-ubuntu-arm64.tar.gz .
           cd ../..
           
+          # 显示发布包信息
           ls -la release/
+          echo ""
+          echo "MD5 checksums:"
+          md5sum release/*
 
-      - name: Upload Release Assets
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rocketmq-ubuntu-multiarch-release
+          name: rocketmq-client-cpp-ubuntu-multiarch-release
           path: release/
           retention-days: 30
-
-      - name: Create GitHub Release (optional)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: release/*
-          draft: true
-          prerelease: true
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # 构建状态汇总
   build-summary:
@@ -201,15 +309,17 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Build Status
+      - name: Generate Build Summary
         run: |
-          echo "## RocketMQ Ubuntu Multi-Architecture Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## RocketMQ Client C++ Ubuntu Multi-Architecture Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Architecture | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| AMD64 | ${{ needs.build-amd64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ARM64 | ${{ needs.build-arm64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Architecture | Status | Runner |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| AMD64 | ${{ needs.build-amd64.result == 'success' && '✅ Success' || '❌ Failed' }} | ubuntu-latest |" >> $GITHUB_STEP_SUMMARY
+          echo "| ARM64 | ${{ needs.build-arm64.result == 'success' && '✅ Success' || '❌ Failed' }} | ubuntu-24.04-arm |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type:** ${{ env.BUILD_TYPE }}" >> $GITHUB_STEP_SUMMARY
