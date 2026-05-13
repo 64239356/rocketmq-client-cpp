@@ -71,70 +71,83 @@ jobs:
 
       - name: Patch CMakeLists.txt to use system libraries
         run: |
-          python3 -c "
-          import sys
-          filepath = 'CMakeLists.txt'
-          with open(filepath, 'r') as f:
+          python3 << 'PYEOF'
+          with open('CMakeLists.txt', 'r') as f:
               lines = f.readlines()
           result = []
           i = 0
           while i < len(lines):
               line = lines[i]
+              # cmake_minimum_required
+              if 'cmake_minimum_required(VERSION 2.8)' in line:
+                  result.append('cmake_minimum_required(VERSION 3.10)\n')
+                  i += 1; continue
+              # Boost_USE_STATIC_LIBS = OFF
+              if line.strip() == 'option(Boost_USE_STATIC_LIBS "only find boost static libs" ON)':
+                  result.append('option(Boost_USE_STATIC_LIBS "only find boost static libs" OFF) # patched\n')
+                  i += 1; continue
+              # OPENSSL_USE_STATIC_LIBS = OFF
+              if line.strip() == 'option(OPENSSL_USE_STATIC_LIBS "only find openssl static libs" ON)':
+                  result.append('option(OPENSSL_USE_STATIC_LIBS "only find openssl static libs" OFF) # patched\n')
+                  i += 1; continue
+              # JSONCPP_USE_STATIC_LIBS = OFF
+              if line.strip() == 'option(JSONCPP_USE_STATIC_LIBS "only find jsoncpp static libs" ON)':
+                  result.append('option(JSONCPP_USE_STATIC_LIBS "only find jsoncpp static libs" OFF) # patched\n')
+                  i += 1; continue
+              # OpenSSL else block
               if '    #find_package(OpenSSL' in line and i + 1 < len(lines) and 'set(OPENSSL_INCLUDE_DIR' in lines[i + 1]:
                   result.append('    find_package(OpenSSL REQUIRED COMPONENTS)\n')
                   result.append('    if (OPENSSL_FOUND)\n')
-                  result.append('        include_directories(\${OPENSSL_INCLUDE_DIR})\n')
-                  result.append('        message(STATUS \"** OpenSSL Include dir: \${OPENSSL_INCLUDE_DIR}\")\n')
-                  result.append('        message(STATUS \"** OpenSSL Libraries: \${OPENSSL_LIBRARIES}\")\n')
+                  result.append('        include_directories(${OPENSSL_INCLUDE_DIR})\n')
+                  result.append('        message(STATUS "** OpenSSL Include dir: ${OPENSSL_INCLUDE_DIR}")\n')
+                  result.append('        message(STATUS "** OpenSSL Libraries: ${OPENSSL_LIBRARIES}")\n')
                   result.append('    endif ()\n')
                   i += 1
-                  while i < len(lines) and 'include_directories(\${OPENSSL_INCLUDE_DIR})' not in lines[i]:
-                      i += 1
-                  i += 1
-                  continue
+                  while i < len(lines) and 'include_directories(${OPENSSL_INCLUDE_DIR})' not in lines[i]: i += 1
+                  i += 1; continue
+              # Boost else block (multi-line #find_package)
               if '    #find_package(Boost' in line and i + 1 < len(lines) and 'set(Boost_INCLUDE_DIR' in lines[i + 1]:
+                  i += 1
+                  while i < len(lines) and 'set(Boost_INCLUDE_DIR' not in lines[i]: i += 1
+                  while i < len(lines) and 'include_directories(${Boost_INCLUDE_DIR})' not in lines[i]: i += 1
+                  i += 1
+                  result.append('    set(Boost_NO_BOOST_CMAKE ON)  # patched\n')
                   result.append('    find_package(Boost REQUIRED COMPONENTS atomic thread system chrono date_time log log_setup regex serialization filesystem locale iostreams)\n')
                   result.append('    if (Boost_FOUND)\n')
-                  result.append('        message(STATUS \"** Boost Include dir: \${Boost_INCLUDE_DIR}\")\n')
-                  result.append('        message(STATUS \"** Boost Libraries dir: \${Boost_LIBRARY_DIRS}\")\n')
-                  result.append('        message(STATUS \"** Boost Libraries: \${Boost_LIBRARIES}\")\n')
-                  result.append('        include_directories(\${Boost_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS "** Boost Include dir: ${Boost_INCLUDE_DIR}")\n')
+                  result.append('        message(STATUS "** Boost Libraries dir: ${Boost_LIBRARY_DIRS}")\n')
+                  result.append('        message(STATUS "** Boost Libraries: ${Boost_LIBRARIES}")\n')
+                  result.append('        include_directories(${Boost_INCLUDE_DIRS})\n')
                   result.append('    endif ()\n')
-                  i += 1
-                  while i < len(lines) and 'include_directories(\${Boost_INCLUDE_DIR})' not in lines[i]:
-                      i += 1
-                  i += 1
                   continue
+              # Libevent else block
               if '    #find_package(Libevent' in line and i + 1 < len(lines) and 'set(LIBEVENT_INCLUDE_DIRS' in lines[i + 1]:
                   result.append('    find_package(Libevent REQUIRED COMPONENTS)\n')
                   result.append('    if (LIBEVENT_FOUND)\n')
-                  result.append('        include_directories(\${LIBEVENT_INCLUDE_DIRS})\n')
-                  result.append('        message(STATUS \"** libevent Include dir: \${LIBEVENT_INCLUDE_DIRS}\")\n')
-                  result.append('        message(STATUS \"** libevent Libraries: \${LIBEVENT_LIBRARIES}\")\n')
+                  result.append('        include_directories(${LIBEVENT_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS "** libevent Include dir: ${LIBEVENT_INCLUDE_DIRS}")\n')
+                  result.append('        message(STATUS "** libevent Libraries: ${LIBEVENT_LIBRARIES}")\n')
                   result.append('    endif ()\n')
                   i += 1
-                  while i < len(lines) and 'include_directories(\${LIBEVENT_INCLUDE_DIRS})' not in lines[i]:
-                      i += 1
-                  i += 1
-                  continue
-              if '    set(JSONCPP_INCLUDE_DIRS \${PROJECT_SOURCE_DIR}/bin/include/jsoncpp)' in line:
+                  while i < len(lines) and 'include_directories(${LIBEVENT_INCLUDE_DIRS})' not in lines[i]: i += 1
+                  i += 1; continue
+              # Jsoncpp else block
+              if '    set(JSONCPP_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/bin/include/jsoncpp)' in line:
                   result.append('    find_package(Jsoncpp REQUIRED)\n')
                   result.append('    if (JSONCPP_FOUND)\n')
-                  result.append('        include_directories(\${JSONCPP_INCLUDE_DIRS})\n')
-                  result.append('        message(STATUS \"** Jsoncpp Include dir: \${JSONCPP_INCLUDE_DIRS}\")\n')
-                  result.append('        message(STATUS \"** Jsoncpp Libraries: \${JSONCPP_LIBRARIES}\")\n')
+                  result.append('        include_directories(${JSONCPP_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS "** Jsoncpp Include dir: ${JSONCPP_INCLUDE_DIRS}")\n')
+                  result.append('        message(STATUS "** Jsoncpp Libraries: ${JSONCPP_LIBRARIES}")\n')
                   result.append('    endif ()\n')
                   i += 1
-                  while i < len(lines) and 'include_directories(\${JSONCPP_INCLUDE_DIRS})' not in lines[i]:
-                      i += 1
-                  i += 1
-                  continue
+                  while i < len(lines) and 'include_directories(${JSONCPP_INCLUDE_DIRS})' not in lines[i]: i += 1
+                  i += 1; continue
               result.append(line)
               i += 1
-          with open(filepath, 'w') as f:
+          with open('CMakeLists.txt', 'w') as f:
               f.writelines(result)
-          print('CMakeLists.txt patched successfully.')
-          "
+          print("CMakeLists.txt patched successfully.")
+          PYEOF
 
       - name: Configure with CMake
         run: |
@@ -197,70 +210,75 @@ jobs:
 
       - name: Patch CMakeLists.txt to use system libraries
         run: |
-          python3 -c "
-          import sys
-          filepath = 'CMakeLists.txt'
-          with open(filepath, 'r') as f:
+          python3 << 'PYEOF'
+          with open('CMakeLists.txt', 'r') as f:
               lines = f.readlines()
           result = []
           i = 0
           while i < len(lines):
               line = lines[i]
+              if 'cmake_minimum_required(VERSION 2.8)' in line:
+                  result.append('cmake_minimum_required(VERSION 3.10)\n')
+                  i += 1; continue
+              if line.strip() == 'option(Boost_USE_STATIC_LIBS "only find boost static libs" ON)':
+                  result.append('option(Boost_USE_STATIC_LIBS "only find boost static libs" OFF) # patched\n')
+                  i += 1; continue
+              if line.strip() == 'option(OPENSSL_USE_STATIC_LIBS "only find openssl static libs" ON)':
+                  result.append('option(OPENSSL_USE_STATIC_LIBS "only find openssl static libs" OFF) # patched\n')
+                  i += 1; continue
+              if line.strip() == 'option(JSONCPP_USE_STATIC_LIBS "only find jsoncpp static libs" ON)':
+                  result.append('option(JSONCPP_USE_STATIC_LIBS "only find jsoncpp static libs" OFF) # patched\n')
+                  i += 1; continue
               if '    #find_package(OpenSSL' in line and i + 1 < len(lines) and 'set(OPENSSL_INCLUDE_DIR' in lines[i + 1]:
                   result.append('    find_package(OpenSSL REQUIRED COMPONENTS)\n')
                   result.append('    if (OPENSSL_FOUND)\n')
-                  result.append('        include_directories(\${OPENSSL_INCLUDE_DIR})\n')
-                  result.append('        message(STATUS \"** OpenSSL Include dir: \${OPENSSL_INCLUDE_DIR}\")\n')
-                  result.append('        message(STATUS \"** OpenSSL Libraries: \${OPENSSL_LIBRARIES}\")\n')
+                  result.append('        include_directories(${OPENSSL_INCLUDE_DIR})\n')
+                  result.append('        message(STATUS "** OpenSSL Include dir: ${OPENSSL_INCLUDE_DIR}")\n')
+                  result.append('        message(STATUS "** OpenSSL Libraries: ${OPENSSL_LIBRARIES}")\n')
                   result.append('    endif ()\n')
                   i += 1
-                  while i < len(lines) and 'include_directories(\${OPENSSL_INCLUDE_DIR})' not in lines[i]:
-                      i += 1
-                  i += 1
-                  continue
+                  while i < len(lines) and 'include_directories(${OPENSSL_INCLUDE_DIR})' not in lines[i]: i += 1
+                  i += 1; continue
               if '    #find_package(Boost' in line and i + 1 < len(lines) and 'set(Boost_INCLUDE_DIR' in lines[i + 1]:
+                  i += 1
+                  while i < len(lines) and 'set(Boost_INCLUDE_DIR' not in lines[i]: i += 1
+                  while i < len(lines) and 'include_directories(${Boost_INCLUDE_DIR})' not in lines[i]: i += 1
+                  i += 1
+                  result.append('    set(Boost_NO_BOOST_CMAKE ON)  # patched\n')
                   result.append('    find_package(Boost REQUIRED COMPONENTS atomic thread system chrono date_time log log_setup regex serialization filesystem locale iostreams)\n')
                   result.append('    if (Boost_FOUND)\n')
-                  result.append('        message(STATUS \"** Boost Include dir: \${Boost_INCLUDE_DIR}\")\n')
-                  result.append('        message(STATUS \"** Boost Libraries dir: \${Boost_LIBRARY_DIRS}\")\n')
-                  result.append('        message(STATUS \"** Boost Libraries: \${Boost_LIBRARIES}\")\n')
-                  result.append('        include_directories(\${Boost_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS "** Boost Include dir: ${Boost_INCLUDE_DIR}")\n')
+                  result.append('        message(STATUS "** Boost Libraries dir: ${Boost_LIBRARY_DIRS}")\n')
+                  result.append('        message(STATUS "** Boost Libraries: ${Boost_LIBRARIES}")\n')
+                  result.append('        include_directories(${Boost_INCLUDE_DIRS})\n')
                   result.append('    endif ()\n')
-                  i += 1
-                  while i < len(lines) and 'include_directories(\${Boost_INCLUDE_DIR})' not in lines[i]:
-                      i += 1
-                  i += 1
                   continue
               if '    #find_package(Libevent' in line and i + 1 < len(lines) and 'set(LIBEVENT_INCLUDE_DIRS' in lines[i + 1]:
                   result.append('    find_package(Libevent REQUIRED COMPONENTS)\n')
                   result.append('    if (LIBEVENT_FOUND)\n')
-                  result.append('        include_directories(\${LIBEVENT_INCLUDE_DIRS})\n')
-                  result.append('        message(STATUS \"** libevent Include dir: \${LIBEVENT_INCLUDE_DIRS}\")\n')
-                  result.append('        message(STATUS \"** libevent Libraries: \${LIBEVENT_LIBRARIES}\")\n')
+                  result.append('        include_directories(${LIBEVENT_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS "** libevent Include dir: ${LIBEVENT_INCLUDE_DIRS}")\n')
+                  result.append('        message(STATUS "** libevent Libraries: ${LIBEVENT_LIBRARIES}")\n')
                   result.append('    endif ()\n')
                   i += 1
-                  while i < len(lines) and 'include_directories(\${LIBEVENT_INCLUDE_DIRS})' not in lines[i]:
-                      i += 1
-                  i += 1
-                  continue
-              if '    set(JSONCPP_INCLUDE_DIRS \${PROJECT_SOURCE_DIR}/bin/include/jsoncpp)' in line:
+                  while i < len(lines) and 'include_directories(${LIBEVENT_INCLUDE_DIRS})' not in lines[i]: i += 1
+                  i += 1; continue
+              if '    set(JSONCPP_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/bin/include/jsoncpp)' in line:
                   result.append('    find_package(Jsoncpp REQUIRED)\n')
                   result.append('    if (JSONCPP_FOUND)\n')
-                  result.append('        include_directories(\${JSONCPP_INCLUDE_DIRS})\n')
-                  result.append('        message(STATUS \"** Jsoncpp Include dir: \${JSONCPP_INCLUDE_DIRS}\")\n')
-                  result.append('        message(STATUS \"** Jsoncpp Libraries: \${JSONCPP_LIBRARIES}\")\n')
+                  result.append('        include_directories(${JSONCPP_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS "** Jsoncpp Include dir: ${JSONCPP_INCLUDE_DIRS}")\n')
+                  result.append('        message(STATUS "** Jsoncpp Libraries: ${JSONCPP_LIBRARIES}")\n')
                   result.append('    endif ()\n')
                   i += 1
-                  while i < len(lines) and 'include_directories(\${JSONCPP_INCLUDE_DIRS})' not in lines[i]:
-                      i += 1
-                  i += 1
-                  continue
+                  while i < len(lines) and 'include_directories(${JSONCPP_INCLUDE_DIRS})' not in lines[i]: i += 1
+                  i += 1; continue
               result.append(line)
               i += 1
-          with open(filepath, 'w') as f:
+          with open('CMakeLists.txt', 'w') as f:
               f.writelines(result)
-          print('CMakeLists.txt patched successfully.')
-          "
+          print("CMakeLists.txt patched successfully.")
+          PYEOF
 
       - name: Configure with CMake
         run: |
