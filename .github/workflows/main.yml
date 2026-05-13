@@ -144,6 +144,7 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
                 -DBUILD_SHARED_LIBS=ON \
+                -DBUILD_TESTING=OFF \
                 -DBUILD_ROCKETMQ_SHARED=ON \
                 -DBUILD_ROCKETMQ_STATIC=OFF \
                 -DCMAKE_SYSTEM_NAME=Linux \
