@@ -70,7 +70,7 @@ jobs:
       - name: Package libraries (amd64)
         run: |
           mkdir -p dist/lib
-          find bin -name "*.so*" -type f -exec cp {} dist/lib/ \; 2>/dev/null || true
+          find build -name "*.so*" -type f -exec cp {} dist/lib/ \; 2>/dev/null || true
           ls -lh dist/lib/ || echo "No libraries found"
 
       - name: Upload artifacts (amd64)
@@ -164,7 +164,7 @@ jobs:
       - name: Package libraries (arm64)
         run: |
           mkdir -p dist/lib
-          find bin -name "*.so*" -type f -exec cp {} dist/lib/ \; 2>/dev/null || true
+          find build -name "*.so*" -type f -exec cp {} dist/lib/ \; 2>/dev/null || true
           ls -lh dist/lib/ || echo "No libraries found"
 
       - name: Upload artifacts (arm64)
