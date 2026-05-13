@@ -131,7 +131,7 @@ jobs:
                   -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
                   -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
                   -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
-                  ..
+                  ../src
             make -j$(nproc)
             mkdir -p ../../bin/lib ../../bin/include/jsoncpp
             cp src/lib_json/libjsoncpp.a ../../bin/lib/ 2>/dev/null || true
