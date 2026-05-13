@@ -123,9 +123,7 @@ jobs:
             mkdir -p build && cd build
             cmake -DCMAKE_BUILD_TYPE=Release \
                   -DBUILD_SHARED_LIBS=OFF \
-                  -DJSONCPP_WITH_TESTS=OFF      # ← 新增！禁用测试
-                  -DJSONCPP_WITH_EXAMPLE=OFF    # ← 新增！禁用示例
-                  -DBUILD_SHARED_LIBS=OFF       # 只构建静态库
+                  -DJSONCPP_WITH_TESTS=OFF \
                   -DCMAKE_SYSTEM_NAME=Linux \
                   -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
                   -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
