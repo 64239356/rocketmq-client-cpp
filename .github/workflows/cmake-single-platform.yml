@@ -158,11 +158,12 @@ jobs:
           # FIND_PATH: insert HINTS before PATHS
           c = re.sub(r'(FIND_PATH\(JSONCPP_INCLUDE_DIRS.*?)(PATHS)',
                      r'\1HINTS\n    /usr/include\n    /usr/local/include\n\2', c, flags=re.DOTALL)
-          # find_library: insert HINTS before PATHS
-          c = re.sub(r'(find_library\(JSONCPP_LIBRARIES.*?)(PATHS \$\{CMAKE_SOURCE_DIR\}/bin/lib)',
-                     r'\1HINTS\n    /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\n    /usr/lib\n    /usr/local/lib\n\2', c, flags=re.DOTALL)
+          # find_library: insert HINTS before PATHS (add multi-arch paths for ARM64/AMD64)
+          c = re.sub(r'(find_library\(JSONCPP_LIBRARIES.*?)(PATHS)',
+                     r'\1HINTS\n    /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\n    /usr/lib/aarch64-linux-gnu\n    /usr/lib/x86_64-linux-gnu\n    /usr/lib\n    /usr/local/lib\n\2', c, flags=re.DOTALL)
           with open(jc, 'w') as f: f.write(c)
           print("FindJsoncpp.cmake patched.")
+          print("  CMAKE_LIBRARY_ARCHITECTURE = " + os.environ.get('CMAKE_LIBRARY_ARCHITECTURE', 'not set'))
           PYEOF
 
       - name: Configure with CMake
@@ -304,10 +305,11 @@ jobs:
           with open(jc) as f: c = f.read()
           c = re.sub(r'(FIND_PATH\(JSONCPP_INCLUDE_DIRS.*?)(PATHS)',
                      r'\1HINTS\n    /usr/include\n    /usr/local/include\n\2', c, flags=re.DOTALL)
-          c = re.sub(r'(find_library\(JSONCPP_LIBRARIES.*?)(PATHS \$\{CMAKE_SOURCE_DIR\}/bin/lib)',
-                     r'\1HINTS\n    /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\n    /usr/lib\n    /usr/local/lib\n\2', c, flags=re.DOTALL)
+          c = re.sub(r'(find_library\(JSONCPP_LIBRARIES.*?)(PATHS)',
+                     r'\1HINTS\n    /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}\n    /usr/lib/aarch64-linux-gnu\n    /usr/lib/x86_64-linux-gnu\n    /usr/lib\n    /usr/local/lib\n\2', c, flags=re.DOTALL)
           with open(jc, 'w') as f: f.write(c)
           print("FindJsoncpp.cmake patched.")
+          print("  CMAKE_LIBRARY_ARCHITECTURE = " + os.environ.get('CMAKE_LIBRARY_ARCHITECTURE', 'not set'))
           PYEOF
 
       - name: Configure with CMake
