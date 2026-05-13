@@ -16,7 +16,6 @@
 name: Build Ubuntu Multi-Architecture (AMD64 & ARM64)
 
 on:
-  # 手动触发
   workflow_dispatch:
     inputs:
       build_type:
@@ -37,7 +36,6 @@ on:
         required: false
         default: true
         type: boolean
-  # PR 触发
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
@@ -45,9 +43,7 @@ on:
       - '**.h'
       - '**.c'
       - 'CMakeLists.txt'
-      - 'build.sh'
       - '.github/workflows/build-ubuntu-multiarch.yml'
-  # 推送到主分支触发
   push:
     branches: [master, main]
 
@@ -55,7 +51,6 @@ env:
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
 
 jobs:
-  # 构建 AMD64 版本
   build-amd64:
     name: Build Ubuntu AMD64
     runs-on: ubuntu-latest
@@ -63,63 +58,110 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            cmake \
-            git \
-            autoconf \
-            libtool \
-            wget \
-            unzip \
-            libbz2-dev \
-            zlib1g-dev \
-            python3
+            build-essential cmake git libtool \
+            libssl-dev \
+            libboost-all-dev \
+            libevent-dev \
+            libjsoncpp-dev \
+            zlib1g-dev
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/tmp_down_dir
-            ./bin
-          key: ${{ runner.os }}-amd64-deps-${{ hashFiles('build.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-amd64-deps-
-
-      - name: Build rocketmq-client-cpp
+      - name: Patch CMakeLists.txt to use system libraries
         run: |
-          chmod +x build.sh
-          if [ "${{ github.event.inputs.run_tests }}" = "true" ]; then
-            ./build.sh test
-          else
-            ./build.sh
-          fi
+          python3 -c "
+          import sys
+          filepath = 'CMakeLists.txt'
+          with open(filepath, 'r') as f:
+              lines = f.readlines()
+          result = []
+          i = 0
+          while i < len(lines):
+              line = lines[i]
+              if '    #find_package(OpenSSL' in line and i + 1 < len(lines) and 'set(OPENSSL_INCLUDE_DIR' in lines[i + 1]:
+                  result.append('    find_package(OpenSSL REQUIRED COMPONENTS)\n')
+                  result.append('    if (OPENSSL_FOUND)\n')
+                  result.append('        include_directories(\${OPENSSL_INCLUDE_DIR})\n')
+                  result.append('        message(STATUS \"** OpenSSL Include dir: \${OPENSSL_INCLUDE_DIR}\")\n')
+                  result.append('        message(STATUS \"** OpenSSL Libraries: \${OPENSSL_LIBRARIES}\")\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${OPENSSL_INCLUDE_DIR})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              if '    #find_package(Boost' in line and i + 1 < len(lines) and 'set(Boost_INCLUDE_DIR' in lines[i + 1]:
+                  result.append('    find_package(Boost REQUIRED COMPONENTS atomic thread system chrono date_time log log_setup regex serialization filesystem locale iostreams)\n')
+                  result.append('    if (Boost_FOUND)\n')
+                  result.append('        message(STATUS \"** Boost Include dir: \${Boost_INCLUDE_DIR}\")\n')
+                  result.append('        message(STATUS \"** Boost Libraries dir: \${Boost_LIBRARY_DIRS}\")\n')
+                  result.append('        message(STATUS \"** Boost Libraries: \${Boost_LIBRARIES}\")\n')
+                  result.append('        include_directories(\${Boost_INCLUDE_DIRS})\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${Boost_INCLUDE_DIR})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              if '    #find_package(Libevent' in line and i + 1 < len(lines) and 'set(LIBEVENT_INCLUDE_DIRS' in lines[i + 1]:
+                  result.append('    find_package(Libevent REQUIRED COMPONENTS)\n')
+                  result.append('    if (LIBEVENT_FOUND)\n')
+                  result.append('        include_directories(\${LIBEVENT_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS \"** libevent Include dir: \${LIBEVENT_INCLUDE_DIRS}\")\n')
+                  result.append('        message(STATUS \"** libevent Libraries: \${LIBEVENT_LIBRARIES}\")\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${LIBEVENT_INCLUDE_DIRS})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              if '    set(JSONCPP_INCLUDE_DIRS \${PROJECT_SOURCE_DIR}/bin/include/jsoncpp)' in line:
+                  result.append('    find_package(Jsoncpp REQUIRED)\n')
+                  result.append('    if (JSONCPP_FOUND)\n')
+                  result.append('        include_directories(\${JSONCPP_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS \"** Jsoncpp Include dir: \${JSONCPP_INCLUDE_DIRS}\")\n')
+                  result.append('        message(STATUS \"** Jsoncpp Libraries: \${JSONCPP_LIBRARIES}\")\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${JSONCPP_INCLUDE_DIRS})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              result.append(line)
+              i += 1
+          with open(filepath, 'w') as f:
+              f.writelines(result)
+          print('CMakeLists.txt patched successfully.')
+          "
+
+      - name: Configure with CMake
+        run: |
+          mkdir -p tmp_build_dir && cd tmp_build_dir
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_ROCKETMQ_STATIC=ON \
+            -DBUILD_ROCKETMQ_SHARED=ON \
+            -DRUN_UNIT_TEST=${{ github.event.inputs.run_tests == 'true' && 'ON' || 'OFF' }}
+
+      - name: Build
+        run: cd tmp_build_dir && make -j$(nproc)
+
+      - name: Run tests
+        if: ${{ github.event.inputs.run_tests == 'true' }}
+        working-directory: tmp_build_dir
+        run: ctest -V
 
       - name: Prepare artifacts
         run: |
-          mkdir -p artifacts/amd64
-          
-          # 复制静态库
-          if [ -f ./librocketmq.a ]; then
-            cp ./librocketmq.a artifacts/amd64/
-          fi
-          if [ -f ./bin/librocketmq.a ]; then
-            cp ./bin/librocketmq.a artifacts/amd64/
-          fi
-          
-          # 复制动态库
-          if [ -f ./bin/librocketmq.so ]; then
-            cp ./bin/librocketmq.so artifacts/amd64/
-          fi
-          
-          # 复制头文件
-          cp -r ./include artifacts/amd64/
-          
-          # 显示构建结果
-          ls -la artifacts/amd64/
-          ls -la artifacts/amd64/include/
+          mkdir -p artifacts/amd64/lib artifacts/amd64/include
+          find tmp_build_dir -name "librocketmq.*" -exec cp {} artifacts/amd64/lib/ \;
+          cp -r include artifacts/amd64/include/rocketmq
+          echo "=== Build artifacts ==="
+          ls -la artifacts/amd64/lib/
+          echo "=== Headers ==="
+          ls artifacts/amd64/include/rocketmq/
 
       - name: Upload AMD64 artifacts
         if: ${{ github.event.inputs.upload_artifacts != 'false' }}
@@ -129,71 +171,123 @@ jobs:
           path: artifacts/amd64/
           retention-days: 7
 
-  # 构建 ARM64 版本
   build-arm64:
     name: Build Ubuntu ARM64
-    runs-on: ubuntu-24.04-arm  # GitHub 提供的 ARM64 Runner
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Show system info
+        run: |
+          uname -a
+          dpkg --print-architecture
+          nproc
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            cmake \
-            git \
-            autoconf \
-            libtool \
-            wget \
-            unzip \
-            libbz2-dev \
-            zlib1g-dev \
-            python3
+            build-essential cmake git libtool \
+            libssl-dev \
+            libboost-all-dev \
+            libevent-dev \
+            libjsoncpp-dev \
+            zlib1g-dev
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/tmp_down_dir
-            ./bin
-          key: ${{ runner.os }}-arm64-deps-${{ hashFiles('build.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-arm64-deps-
-
-      - name: Build rocketmq-client-cpp
+      - name: Patch CMakeLists.txt to use system libraries
         run: |
-          chmod +x build.sh
-          if [ "${{ github.event.inputs.run_tests }}" = "true" ]; then
-            ./build.sh test
-          else
-            ./build.sh
-          fi
+          python3 -c "
+          import sys
+          filepath = 'CMakeLists.txt'
+          with open(filepath, 'r') as f:
+              lines = f.readlines()
+          result = []
+          i = 0
+          while i < len(lines):
+              line = lines[i]
+              if '    #find_package(OpenSSL' in line and i + 1 < len(lines) and 'set(OPENSSL_INCLUDE_DIR' in lines[i + 1]:
+                  result.append('    find_package(OpenSSL REQUIRED COMPONENTS)\n')
+                  result.append('    if (OPENSSL_FOUND)\n')
+                  result.append('        include_directories(\${OPENSSL_INCLUDE_DIR})\n')
+                  result.append('        message(STATUS \"** OpenSSL Include dir: \${OPENSSL_INCLUDE_DIR}\")\n')
+                  result.append('        message(STATUS \"** OpenSSL Libraries: \${OPENSSL_LIBRARIES}\")\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${OPENSSL_INCLUDE_DIR})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              if '    #find_package(Boost' in line and i + 1 < len(lines) and 'set(Boost_INCLUDE_DIR' in lines[i + 1]:
+                  result.append('    find_package(Boost REQUIRED COMPONENTS atomic thread system chrono date_time log log_setup regex serialization filesystem locale iostreams)\n')
+                  result.append('    if (Boost_FOUND)\n')
+                  result.append('        message(STATUS \"** Boost Include dir: \${Boost_INCLUDE_DIR}\")\n')
+                  result.append('        message(STATUS \"** Boost Libraries dir: \${Boost_LIBRARY_DIRS}\")\n')
+                  result.append('        message(STATUS \"** Boost Libraries: \${Boost_LIBRARIES}\")\n')
+                  result.append('        include_directories(\${Boost_INCLUDE_DIRS})\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${Boost_INCLUDE_DIR})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              if '    #find_package(Libevent' in line and i + 1 < len(lines) and 'set(LIBEVENT_INCLUDE_DIRS' in lines[i + 1]:
+                  result.append('    find_package(Libevent REQUIRED COMPONENTS)\n')
+                  result.append('    if (LIBEVENT_FOUND)\n')
+                  result.append('        include_directories(\${LIBEVENT_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS \"** libevent Include dir: \${LIBEVENT_INCLUDE_DIRS}\")\n')
+                  result.append('        message(STATUS \"** libevent Libraries: \${LIBEVENT_LIBRARIES}\")\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${LIBEVENT_INCLUDE_DIRS})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              if '    set(JSONCPP_INCLUDE_DIRS \${PROJECT_SOURCE_DIR}/bin/include/jsoncpp)' in line:
+                  result.append('    find_package(Jsoncpp REQUIRED)\n')
+                  result.append('    if (JSONCPP_FOUND)\n')
+                  result.append('        include_directories(\${JSONCPP_INCLUDE_DIRS})\n')
+                  result.append('        message(STATUS \"** Jsoncpp Include dir: \${JSONCPP_INCLUDE_DIRS}\")\n')
+                  result.append('        message(STATUS \"** Jsoncpp Libraries: \${JSONCPP_LIBRARIES}\")\n')
+                  result.append('    endif ()\n')
+                  i += 1
+                  while i < len(lines) and 'include_directories(\${JSONCPP_INCLUDE_DIRS})' not in lines[i]:
+                      i += 1
+                  i += 1
+                  continue
+              result.append(line)
+              i += 1
+          with open(filepath, 'w') as f:
+              f.writelines(result)
+          print('CMakeLists.txt patched successfully.')
+          "
+
+      - name: Configure with CMake
+        run: |
+          mkdir -p tmp_build_dir && cd tmp_build_dir
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_ROCKETMQ_STATIC=ON \
+            -DBUILD_ROCKETMQ_SHARED=ON \
+            -DRUN_UNIT_TEST=${{ github.event.inputs.run_tests == 'true' && 'ON' || 'OFF' }}
+
+      - name: Build
+        run: cd tmp_build_dir && make -j$(nproc)
+
+      - name: Run tests
+        if: ${{ github.event.inputs.run_tests == 'true' }}
+        working-directory: tmp_build_dir
+        run: ctest -V
 
       - name: Prepare artifacts
         run: |
-          mkdir -p artifacts/arm64
-          
-          # 复制静态库
-          if [ -f ./librocketmq.a ]; then
-            cp ./librocketmq.a artifacts/arm64/
-          fi
-          if [ -f ./bin/librocketmq.a ]; then
-            cp ./bin/librocketmq.a artifacts/arm64/
-          fi
-          
-          # 复制动态库
-          if [ -f ./bin/librocketmq.so ]; then
-            cp ./bin/librocketmq.so artifacts/arm64/
-          fi
-          
-          # 复制头文件
-          cp -r ./include artifacts/arm64/
-          
-          # 显示构建结果
-          ls -la artifacts/arm64/
-          ls -la artifacts/arm64/include/
+          mkdir -p artifacts/arm64/lib artifacts/arm64/include
+          find tmp_build_dir -name "librocketmq.*" -exec cp {} artifacts/arm64/lib/ \;
+          cp -r include artifacts/arm64/include/rocketmq
+          echo "=== Build artifacts ==="
+          ls -la artifacts/arm64/lib/
+          echo "=== Headers ==="
+          ls artifacts/arm64/include/rocketmq/
 
       - name: Upload ARM64 artifacts
         if: ${{ github.event.inputs.upload_artifacts != 'false' }}
@@ -203,56 +297,6 @@ jobs:
           path: artifacts/arm64/
           retention-days: 7
 
-  # 使用 QEMU 构建 ARM64（备选方案）
-  build-arm64-qemu:
-    name: Build Ubuntu ARM64 (QEMU)
-    runs-on: ubuntu-latest
-    if: false  # 默认禁用，当 ARM64 Runner 不可用时启用此项
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build in ARM64 container
-        run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
-            --platform linux/arm64 \
-            ubuntu:22.04 \
-            bash -c "
-              apt-get update && \
-              apt-get install -y build-essential cmake git autoconf libtool wget unzip libbz2-dev zlib1g-dev python3 && \
-              chmod +x build.sh && \
-              ./build.sh
-            "
-
-      - name: Prepare artifacts
-        run: |
-          mkdir -p artifacts/arm64
-          if [ -f ./librocketmq.a ]; then
-            cp ./librocketmq.a artifacts/arm64/
-          fi
-          if [ -f ./bin/librocketmq.a ]; then
-            cp ./bin/librocketmq.a artifacts/arm64/
-          fi
-          cp -r ./include artifacts/arm64/
-          ls -la artifacts/arm64/
-
-      - name: Upload ARM64 artifacts
-        if: ${{ github.event.inputs.upload_artifacts != 'false' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rocketmq-client-cpp-ubuntu-arm64-qemu
-          path: artifacts/arm64/
-          retention-days: 7
-
-  # 创建发布包
   create-release:
     name: Create Release Package
     needs: [build-amd64, build-arm64]
@@ -278,21 +322,16 @@ jobs:
         run: |
           VERSION=$(date +%Y%m%d)-${{ github.run_number }}
           mkdir -p release
-          
-          # 打包 AMD64
           cd dist/amd64
           tar -czvf ../../release/rocketmq-client-cpp-${VERSION}-ubuntu-amd64.tar.gz .
           cd ../..
-          
-          # 打包 ARM64
           cd dist/arm64
           tar -czvf ../../release/rocketmq-client-cpp-${VERSION}-ubuntu-arm64.tar.gz .
           cd ../..
-          
-          # 显示发布包信息
+          echo "=== Release packages ==="
           ls -la release/
           echo ""
-          echo "MD5 checksums:"
+          echo "=== MD5 checksums ==="
           md5sum release/*
 
       - name: Upload release artifacts
@@ -302,7 +341,6 @@ jobs:
           path: release/
           retention-days: 30
 
-  # 构建状态汇总
   build-summary:
     name: Build Summary
     needs: [build-amd64, build-arm64]
