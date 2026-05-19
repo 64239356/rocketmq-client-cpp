@@ -1,0 +1,50 @@
+name: Cross Compile RocketMQ Client for ARM64
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # 允许你在 GitHub 网页上手动点击运行
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-20.04 # 选择稳定的 20.04 环境
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v3
+
+    - name: Install Cross Compiler & Build Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+                               cmake automake autoconf libtool bzip2 zlib1g-dev unzip wget
+
+    - name: Download Dependencies Source Packages
+      run: |
+        mkdir -p tmp_down_dir
+        cd tmp_down_dir
+        echo "Downloading OpenSSL..."
+        wget --no-check-certificate https://www.openssl.org/source/old/1.1.1/openssl-1.1.1d.tar.gz
+        echo "Downloading Libevent..."
+        wget --no-check-certificate https://github.com/libevent/libevent/archive/release-2.1.11-stable.zip -O libevent-release-2.1.11-stable.zip
+        echo "Downloading JsonCPP..."
+        wget --no-check-certificate https://github.com/open-source-parsers/jsoncpp/archive/0.10.7.zip -O jsoncpp-0.10.7.zip
+        echo "Downloading Boost..."
+        wget --no-check-certificate http://sourceforge.net/projects/boost/files/boost/1.58.0/boost_1_58_0.tar.gz
+
+    - name: Run Cross-Compilation Script
+      run: |
+        chmod +x build_arm64.sh
+        ./build_arm64.sh
+
+    - name: Package Output Artifacts
+      run: |
+        # 编译完成后，将生成的 bin 目录（包含头文件和刚刚编好的 .a / .so 文件）打包
+        tar -zcvf rocketmq-client-cpp-arm64.tar.gz bin/
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: rocketmq-client-arm64-binaries
+        path: rocketmq-client-cpp-arm64.tar.gz
+        retention-days: 7 # 产物在 GitHub 上保存 7 天
